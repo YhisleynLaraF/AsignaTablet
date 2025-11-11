@@ -256,28 +256,26 @@
     <section id="sec-ajustes" class="section">
       <div class="card">
         <h2>Ajustes</h2>
-        <p class="hint">Opcional: conecta con Firebase/Firestore para sincronización multiusuario. Pega tu config y activa.</p>
+        <p class="hint">Firestore se activa automáticamente con configuración en código.</p>
         <div class="grid">
           <label>Config Firebase (JSON)</label>
-          <textarea id="firebase-config" placeholder='{"apiKey":"…","authDomain":"…","projectId":"…",…}'></textarea>
+          <textarea id="firebase-config" disabled placeholder="Configuración embebida en app.js"></textarea>
           <div class="row">
-            <button id="btn-guardar-config" class="btn">Guardar Config</button>
-            <button id="btn-activar-firebase" class="btn primary">Activar Firestore</button>
+            <button id="btn-activar-firebase" class="btn" disabled>Activar Firestore</button>
             <span id="firebase-status" class="hint"></span>
           </div>
         </div>
       </div>
       <div class="card">
         <h2>Acerca de</h2>
-        <p>Versión 1.0 · Local‑first · Sin frameworks · Hecho para operar en terreno.</p>
+        <p>Versión 1.1 · Local‑first + Firestore en duro · Hecho para terreno.</p>
       </div>
     </section>
 
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js" type="module"></script>
   <script>
-    // Registrar SW solo en https o localhost
     if ((location.protocol === 'https:' || location.hostname === 'localhost') && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(console.error);
     }
