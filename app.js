@@ -1,20 +1,15 @@
 // ==========================
-// app.js — lógica de la app
+// app.js — lógica con Firebase en duro
 // ==========================
 
-// ---------- Utilidades ----------
 const $ = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
 const nowISO = () => new Date().toISOString();
 const fmtDate = iso => new Date(iso).toLocaleString();
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-// Validaciones simples
 const isEmpty = v => !v || String(v).trim()==='';
 const onlyDigits = v => String(v||'').replace(/\D+/g,'');
 
-// ---------- Construir Tabs ----------
-function buildTabs(){
+(function buildTabs(){
   const sections = [
     { id:'sec-asignar', label:'Asignar' },
     { id:'sec-tablets', label:'Tablets' },
@@ -23,8 +18,7 @@ function buildTabs(){
     { id:'sec-sims', label:'SIMs' },
     { id:'sec-ajustes', label:'Ajustes' },
   ];
-  const tabsEl = $('#tabs');
-  tabsEl.innerHTML='';
+  const tabsEl = document.getElementById('tabs');
   sections.forEach((s,i)=>{
     const b = document.createElement('button');
     b.className = 'tab' + (i===0?' active':'');
@@ -37,13 +31,11 @@ function buildTabs(){
     };
     tabsEl.appendChild(b);
   });
-}
+})();
 
-// ---------- IndexedDB (local-first) ----------
 const DB_NAME = 'asignadorDB';
 const DB_VER = 1;
 let db;
-
 function openDB(){
   return new Promise((resolve, reject)=>{
     const req = indexedDB.open(DB_NAME, DB_VER);
@@ -54,15 +46,9 @@ function openDB(){
         s.createIndex('modelo','modelo',{unique:false});
         s.createIndex('estado','estado',{unique:false});
       }
-      if(!d.objectStoreNames.contains('conductores')){
-        d.createObjectStore('conductores', { keyPath:'rut' });
-      }
-      if(!d.objectStoreNames.contains('vehiculos')){
-        d.createObjectStore('vehiculos', { keyPath:'patente' });
-      }
-      if(!d.objectStoreNames.contains('sims')){
-        d.createObjectStore('sims', { keyPath:'numero' });
-      }
+      if(!d.objectStoreNames.contains('conductores')) d.createObjectStore('conductores', { keyPath:'rut' });
+      if(!d.objectStoreNames.contains('vehiculos')) d.createObjectStore('vehiculos', { keyPath:'patente' });
+      if(!d.objectStoreNames.contains('sims')) d.createObjectStore('sims', { keyPath:'numero' });
       if(!d.objectStoreNames.contains('asignaciones')){
         const a = d.createObjectStore('asignaciones', { keyPath:'id' });
         a.createIndex('estado','estado',{unique:false});
@@ -74,81 +60,72 @@ function openDB(){
     req.onerror = ()=> reject(req.error);
   });
 }
-
 function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
 const getAll = (store)=> new Promise((res,rej)=>{ const r=tx(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
 const get = (store,key)=> new Promise((res,rej)=>{ const r=tx(store).get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
 const put = (store,obj)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
 const del = (store,key)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
 
-// ---------- (Opcional) Firestore Sync ----------
-let USE_FIREBASE = false; // cambia a true tras activar
-let firebaseCfg = null;
-let fb = null, auth=null, fs=null;
+// Firebase en duro
+const FORCE_FIREBASE = true;
+const FIREBASE_CONFIG = {
+  "apiKey": "AIzaSyBOoHRADT4yOCpytPvcyHcaWSB1pT2ZB8I",
+ "authDomain": "asignadortablet.firebaseapp.com",
+  "projectId": "asignadortablet",
+  "storageBucket": "asignadortablet.firebasestorage.app",
+  "messagingSenderId": "261128444351",
+  "appId": "1:261128444351:web:996b8a3171da8d20f6e90a"
+};
+let fbApp = null, auth = null, fs = null, ff = null;
 
-async function tryEnableFirebase(){
-  try{
-    const cfgRaw = localStorage.getItem('firebaseConfig');
-    if(!cfgRaw){ $('#firebase-status').textContent='Sin configuración'; return; }
-    firebaseCfg = JSON.parse(cfgRaw);
-    // Carga SDK desde CDN solo si hace falta
-    const appMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const authMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
-    const fsMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+async function enableFirebaseHardcoded(){
+  if(!FORCE_FIREBASE) return;
+  const appMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+  const authMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+  ff = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
-    fb = appMod.initializeApp(firebaseCfg);
-    auth = authMod.getAuth(fb);
-    fs = fsMod.getFirestore(fb);
-    await fsMod.enableIndexedDbPersistence(fs).catch(()=>{});
+  fbApp = appMod.initializeApp(FIREBASE_CONFIG);
+  auth = authMod.getAuth(fbApp);
+  fs = ff.getFirestore(fbApp);
 
-    // Login anónimo por simplicidad
-    await authMod.signInAnonymously(auth);
+  await authMod.setPersistence(auth, authMod.browserLocalPersistence);
+  if(!auth.currentUser) await authMod.signInAnonymously(auth);
 
-    USE_FIREBASE = true;
-    $('#firebase-status').textContent='Firestore activo (login anónimo)';
-  }catch(e){
-    console.error(e);
-    $('#firebase-status').textContent='Error activando Firestore';
-    USE_FIREBASE = false;
-  }
+  ff.enableIndexedDbPersistence(fs).catch(()=>{});
+  window.addEventListener('online', ()=> ff.enableNetwork(fs));
+  window.addEventListener('offline', ()=> ff.disableNetwork(fs));
+
+  const st = document.getElementById('firebase-status');
+  if(st) st.textContent = 'Firestore activo (config en código)';
 }
 
-// Helper para sincronizar una escritura local hacia Firestore (demo)
-async function syncWrite(collection, key, data){
-  if(!USE_FIREBASE) return;
-  const { doc, setDoc, collection: coll } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-  await setDoc(doc(coll(fs, collection), key), data, { merge:true });
+async function startRealtimeSync(){
+  if(!fs || !ff) return;
+  const upsert = async (store, keyField, doc) => {
+    const current = await get(store, doc[keyField]);
+    await put(store, { ...(current||{}), ...doc });
+  };
+  ff.onSnapshot(ff.collection(fs, 'vehiculos'), snap => snap.docChanges().forEach(async ch => {
+    if(ch.type!=='removed') await upsert('vehiculos','patente', ch.doc.data());
+  }));
+  ff.onSnapshot(ff.collection(fs, 'conductores'), snap => snap.docChanges().forEach(async ch => {
+    if(ch.type!=='removed') await upsert('conductores','rut', ch.doc.data());
+  }));
+  ff.onSnapshot(ff.collection(fs, 'sims'), snap => snap.docChanges().forEach(async ch => {
+    if(ch.type!=='removed') await upsert('sims','numero', ch.doc.data());
+  }));
+  ff.onSnapshot(ff.collection(fs, 'tablets'), snap => snap.docChanges().forEach(async ch => {
+    if(ch.type!=='removed') await upsert('tablets','imei', ch.doc.data());
+  }));
+  ff.onSnapshot(ff.collection(fs, 'asignaciones'), snap => snap.docChanges().forEach(async ch => {
+    if(ch.type!=='removed'){ await put('asignaciones', ch.doc.data()); renderAsignaciones(); }
+  }));
 }
 
-// ---------- UI POBLADO SELECTS ----------
-async function refreshMasterSelects(){
-  const [vehiculos, conductores, sims] = await Promise.all([
-    getAll('vehiculos'), getAll('conductores'), getAll('sims')
-  ]);
-  const vehSel = $('#asig-vehiculo'); vehSel.innerHTML='';
-  vehiculos.sort((a,b)=>a.patente.localeCompare(b.patente)).forEach(v=>{
-    const opt = document.createElement('option');
-    opt.value = v.patente; opt.textContent = `${v.patente} — ${v.sigla||''}`.trim();
-    vehSel.appendChild(opt);
-  });
-  const conSel = $('#asig-conductor'); conSel.innerHTML='';
-  conductores.sort((a,b)=>a.rut.localeCompare(b.rut)).forEach(c=>{
-    const opt = document.createElement('option');
-    opt.value = c.rut; opt.textContent = `${c.rut} — ${c.nombre}`;
-    conSel.appendChild(opt);
-  });
-  const simSel = $('#asig-sim-numero'); simSel.innerHTML='';
-  sims.sort((a,b)=> (a.numero||'').localeCompare(b.numero||'')).forEach(s=>{
-    const opt = document.createElement('option');
-    opt.value = s.numero; opt.textContent = `${s.numero} (${s.iccid||'sin ICCID'})`;
-    simSel.appendChild(opt);
-  });
-}
-
-// ---------- RENDER TABLAS ----------
+// Render
 async function renderTablets(){
-  const tbody = $('#tabla-tablets tbody');
-  const q = ($('#filtro-tablets').value||'').toLowerCase();
+  const tbody = document.querySelector('#tabla-tablets tbody');
+  const q = (document.getElementById('filtro-tablets').value||'').toLowerCase();
   const items = (await getAll('tablets')).filter(t=>
     t.imei.toLowerCase().includes(q) || (t.modelo||'').toLowerCase().includes(q)
   );
@@ -162,10 +139,9 @@ async function renderTablets(){
     </tr>
   `).join('');
 }
-
 async function renderConductores(){
-  const tbody = $('#tabla-conductores tbody');
-  const q = ($('#filtro-conductores').value||'').toLowerCase();
+  const tbody = document.querySelector('#tabla-conductores tbody');
+  const q = (document.getElementById('filtro-conductores').value||'').toLowerCase();
   const items = (await getAll('conductores')).filter(c=>
     c.rut.toLowerCase().includes(q) || (c.nombre||'').toLowerCase().includes(q)
   );
@@ -177,10 +153,9 @@ async function renderConductores(){
     </tr>
   `).join('');
 }
-
 async function renderVehiculos(){
-  const tbody = $('#tabla-vehiculos tbody');
-  const q = ($('#filtro-vehiculos').value||'').toLowerCase();
+  const tbody = document.querySelector('#tabla-vehiculos tbody');
+  const q = (document.getElementById('filtro-vehiculos').value||'').toLowerCase();
   const items = (await getAll('vehiculos')).filter(v=>
     v.patente.toLowerCase().includes(q) || (v.sigla||'').toLowerCase().includes(q)
   );
@@ -192,10 +167,9 @@ async function renderVehiculos(){
     </tr>
   `).join('');
 }
-
 async function renderSims(){
-  const tbody = $('#tabla-sims tbody');
-  const q = ($('#filtro-sims').value||'').toLowerCase();
+  const tbody = document.querySelector('#tabla-sims tbody');
+  const q = (document.getElementById('filtro-sims').value||'').toLowerCase();
   const items = (await getAll('sims')).filter(s=>
     (s.numero||'').toLowerCase().includes(q) || (s.iccid||'').toLowerCase().includes(q)
   );
@@ -208,11 +182,10 @@ async function renderSims(){
     </tr>
   `).join('');
 }
-
 async function renderAsignaciones(){
-  const tbody = $('#tabla-asignaciones tbody');
-  const q = ($('#filtro').value||'').toLowerCase();
-  const items = (await getAll('asignaciones')).filter(a=> !a.devueltoEn ); // activas
+  const tbody = document.querySelector('#tabla-asignaciones tbody');
+  const q = (document.getElementById('filtro').value||'').toLowerCase();
+  const items = (await getAll('asignaciones')).filter(a=> !a.devueltoEn );
   const filt = items.filter(a=>
     (a.patente||'').toLowerCase().includes(q) || (a.sigla||'').toLowerCase().includes(q) ||
     (a.tabletImei||'').toLowerCase().includes(q) || (a.rut||'').toLowerCase().includes(q)
@@ -232,96 +205,76 @@ async function renderAsignaciones(){
         <td>${a.rut||''}</td>
         <td>${estado}</td>
         <td>${a.observacion||''}</td>
-        <td>
-          <button class="btn" data-retirar="${a.id}">Retirar</button>
-        </td>
+        <td><button class="btn" data-retirar="${a.id}">Retirar</button></td>
       </tr>
     `;
   }).join('');
 }
 
-// ---------- Eventos: CRUD maestros ----------
+// CRUD & Eventos
 document.addEventListener('click', async (e)=>{
-  // Deletes delegados
   const imei = e.target?.dataset?.delTablet;
-  if(imei){
-    if(!confirm('Eliminar tablet '+imei+'?')) return;
-    await del('tablets', imei); await renderTablets(); await refreshMasterSelects();
-    return;
-  }
+  if(imei){ if(!confirm('Eliminar tablet '+imei+'?')) return; await del('tablets', imei); await renderTablets(); await refreshMasterSelects(); return; }
   const rut = e.target?.dataset?.delConductor;
-  if(rut){
-    if(!confirm('Eliminar conductor '+rut+'?')) return;
-    await del('conductores', rut); await renderConductores(); await refreshMasterSelects();
-    return;
-  }
+  if(rut){ if(!confirm('Eliminar conductor '+rut+'?')) return; await del('conductores', rut); await renderConductores(); await refreshMasterSelects(); return; }
   const pat = e.target?.dataset?.delVeh;
-  if(pat){
-    if(!confirm('Eliminar vehículo '+pat+'?')) return;
-    await del('vehiculos', pat); await renderVehiculos(); await refreshMasterSelects();
-    return;
-  }
+  if(pat){ if(!confirm('Eliminar vehículo '+pat+'?')) return; await del('vehiculos', pat); await renderVehiculos(); await refreshMasterSelects(); return; }
   const n = e.target?.dataset?.delSim;
-  if(n){
-    if(!confirm('Eliminar SIM '+n+'?')) return;
-    await del('sims', n); await renderSims(); await refreshMasterSelects();
-    return;
-  }
+  if(n){ if(!confirm('Eliminar SIM '+n+'?')) return; await del('sims', n); await renderSims(); await refreshMasterSelects(); return; }
 });
 
-$('#btn-add-tablet')?.addEventListener('click', async ()=>{
-  const imei = onlyDigits($('#tab-imei').value);
-  const modelo = $('#tab-modelo').value.trim();
-  const nota = $('#tab-nota').value.trim();
+document.getElementById('btn-add-tablet')?.addEventListener('click', async ()=>{
+  const imei = onlyDigits(document.getElementById('tab-imei').value);
+  const modelo = document.getElementById('tab-modelo').value.trim();
+  const nota = document.getElementById('tab-nota').value.trim();
   if(isEmpty(imei)) return alert('IMEI requerido');
   await put('tablets', { imei, modelo, provisional:true, estado:'disponible', nota });
-  await syncWrite('tablets', imei, { imei, modelo, provisional:true, estado:'disponible', nota });
-  $('#tab-imei').value=''; $('#tab-modelo').value=''; $('#tab-nota').value='';
+  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), imei), { imei, modelo, provisional:true, estado:'disponible', nota }, { merge:true });
+  document.getElementById('tab-imei').value=''; document.getElementById('tab-modelo').value=''; document.getElementById('tab-nota').value='';
   await renderTablets(); await refreshMasterSelects();
 });
 
-$('#btn-add-conductor')?.addEventListener('click', async ()=>{
-  const rut = $('#con-rut').value.trim();
-  const nombre = $('#con-nombre').value.trim();
+document.getElementById('btn-add-conductor')?.addEventListener('click', async ()=>{
+  const rut = document.getElementById('con-rut').value.trim();
+  const nombre = document.getElementById('con-nombre').value.trim();
   if(isEmpty(rut) || isEmpty(nombre)) return alert('RUT y Nombre son requeridos');
   await put('conductores', { rut, nombre });
-  await syncWrite('conductores', rut, { rut, nombre });
-  $('#con-rut').value=''; $('#con-nombre').value='';
+  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'conductores'), rut), { rut, nombre }, { merge:true });
+  document.getElementById('con-rut').value=''; document.getElementById('con-nombre').value='';
   await renderConductores(); await refreshMasterSelects();
 });
 
-$('#btn-add-veh')?.addEventListener('click', async ()=>{
-  const patente = ($('#veh-patente').value||'').trim().toUpperCase();
-  const sigla = ($('#veh-sigla').value||'').trim();
+document.getElementById('btn-add-veh')?.addEventListener('click', async ()=>{
+  const patente = (document.getElementById('veh-patente').value||'').trim().toUpperCase();
+  const sigla = (document.getElementById('veh-sigla').value||'').trim();
   if(isEmpty(patente)) return alert('Patente requerida');
   await put('vehiculos', { patente, sigla });
-  await syncWrite('vehiculos', patente, { patente, sigla });
-  $('#veh-patente').value=''; $('#veh-sigla').value='';
+  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'vehiculos'), patente), { patente, sigla }, { merge:true });
+  document.getElementById('veh-patente').value=''; document.getElementById('veh-sigla').value='';
   await renderVehiculos(); await refreshMasterSelects();
 });
 
-$('#btn-add-sim')?.addEventListener('click', async ()=>{
-  const numero = onlyDigits($('#sim-numero').value);
-  const iccid = onlyDigits($('#sim-iccid').value);
-  const simImei = onlyDigits($('#sim-imei').value);
+document.getElementById('btn-add-sim')?.addEventListener('click', async ()=>{
+  const numero = onlyDigits(document.getElementById('sim-numero').value);
+  const iccid = onlyDigits(document.getElementById('sim-iccid').value);
+  const simImei = onlyDigits(document.getElementById('sim-imei').value);
   if(isEmpty(numero)) return alert('Número SIM requerido');
   await put('sims', { numero, iccid, simImei });
-  await syncWrite('sims', numero, { numero, iccid, simImei });
-  $('#sim-numero').value=''; $('#sim-iccid').value=''; $('#sim-imei').value='';
+  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'sims'), numero), { numero, iccid, simImei }, { merge:true });
+  document.getElementById('sim-numero').value=''; document.getElementById('sim-iccid').value=''; document.getElementById('sim-imei').value='';
   await renderSims(); await refreshMasterSelects();
 });
 
-// ---------- Crear/retirar asignación ----------
-$('#asig-red')?.addEventListener('change', ()=>{
-  $('#sim-block').style.display = ($('#asig-red').value==='SIM') ? 'grid' : 'none';
+document.getElementById('asig-red')?.addEventListener('change', ()=>{
+  document.getElementById('sim-block').style.display = (document.getElementById('asig-red').value==='SIM') ? 'grid' : 'none';
 });
 
-$('#btn-crear-asig')?.addEventListener('click', async ()=>{
-  const patente = $('#asig-vehiculo').value;
-  const conRut = $('#asig-conductor').value;
-  const tabletImei = onlyDigits($('#asig-tablet-imei').value);
-  const red = $('#asig-red').value;
-  const obs = $('#asig-obs').value.trim();
+document.getElementById('btn-crear-asig')?.addEventListener('click', async ()=>{
+  const patente = document.getElementById('asig-vehiculo').value;
+  const conRut = document.getElementById('asig-conductor').value;
+  const tabletImei = onlyDigits(document.getElementById('asig-tablet-imei').value);
+  const red = document.getElementById('asig-red').value;
+  const obs = document.getElementById('asig-obs').value.trim();
   if(isEmpty(patente) || isEmpty(conRut) || isEmpty(tabletImei)) return alert('Patente, Conductor e IMEI son obligatorios');
   const veh = await get('vehiculos', patente);
   if(!veh) return alert('Vehículo no existe');
@@ -330,18 +283,18 @@ $('#btn-crear-asig')?.addEventListener('click', async ()=>{
 
   const asig = {
     id: uid(), tabletImei, patente, sigla: veh.sigla||'', rut: conRut, red,
-    simNumero: red==='SIM'? $('#asig-sim-numero').value : '',
-    simIccid: red==='SIM'? onlyDigits($('#asig-sim-iccid').value) : '',
-    simImei: red==='SIM'? onlyDigits($('#asig-sim-imei').value) : '',
+    simNumero: red==='SIM'? document.getElementById('asig-sim-numero').value : '',
+    simIccid: red==='SIM'? onlyDigits(document.getElementById('asig-sim-iccid').value) : '',
+    simImei: red==='SIM'? onlyDigits(document.getElementById('asig-sim-imei').value) : '',
     entregadoEn: nowISO(), devueltoEn: null, estado:'Entregado', observacion: obs, creadoPor: 'local'
   };
   await put('asignaciones', asig);
   await put('tablets', { ...tab, estado:'asignada' });
-  await syncWrite('asignaciones', asig.id, asig);
-  await syncWrite('tablets', tab.imei, { ...tab, estado:'asignada' });
-
-  // limpiar
-  $('#asig-tablet-imei').value=''; $('#asig-obs').value='';
+  if(fs && ff){
+    await ff.setDoc(ff.doc(ff.collection(fs, 'asignaciones'), asig.id), asig, { merge:true });
+    await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), tab.imei), { ...tab, estado:'asignada' }, { merge:true });
+  }
+  document.getElementById('asig-tablet-imei').value=''; document.getElementById('asig-obs').value='';
   await renderAsignaciones(); await renderTablets();
 });
 
@@ -354,27 +307,24 @@ document.getElementById('tabla-asignaciones')?.addEventListener('click', async (
   const tab = await get('tablets', a.tabletImei);
   if(tab){ await put('tablets', { ...tab, estado:'disponible' }); await renderTablets(); }
   await renderAsignaciones();
-  await syncWrite('asignaciones', a.id, a);
-  if(tab) await syncWrite('tablets', tab.imei, { ...tab, estado:'disponible' });
+  if(fs && ff){
+    await ff.setDoc(ff.doc(ff.collection(fs, 'asignaciones'), a.id), a, { merge:true });
+    if(tab) await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), tab.imei), { ...tab, estado:'disponible' }, { merge:true });
+  }
 });
 
-// ---------- Filtros y export ----------
-$('#filtro')?.addEventListener('input', renderAsignaciones);
-$('#filtro-tablets')?.addEventListener('input', renderTablets);
-$('#filtro-conductores')?.addEventListener('input', renderConductores);
-$('#filtro-vehiculos')?.addEventListener('input', renderVehiculos);
-$('#filtro-sims')?.addEventListener('input', renderSims);
+document.getElementById('filtro')?.addEventListener('input', renderAsignaciones);
+document.getElementById('filtro-tablets')?.addEventListener('input', renderTablets);
+document.getElementById('filtro-conductores')?.addEventListener('input', renderConductores);
+document.getElementById('filtro-vehiculos')?.addEventListener('input', renderVehiculos);
+document.getElementById('filtro-sims')?.addEventListener('input', renderSims);
 
 document.getElementById('btn-export')?.addEventListener('click', async ()=>{
   const all = await getAll('asignaciones');
-  const rows = [
-    ['id','entregadoEn','devueltoEn','estado','patente','sigla','tabletImei','red','simNumero','simIccid','simImei','rut','observacion']
-  ];
+  const rows = [['id','entregadoEn','devueltoEn','estado','patente','sigla','tabletImei','red','simNumero','simIccid','simImei','rut','observacion']];
   all.sort((a,b)=> (b.entregadoEn||'').localeCompare(a.entregadoEn||''));
   for(const a of all){
-    rows.push([
-      a.id,a.entregadoEn,a.devueltoEn||'',a.estado,a.patente||'',a.sigla||'',a.tabletImei||'',a.red||'',a.simNumero||'',a.simIccid||'',a.simImei||'',a.rut||'',(a.observacion||'').replace(/\n/g,' ')
-    ]);
+    rows.push([a.id,a.entregadoEn,a.devueltoEn||'',a.estado,a.patente||'',a.sigla||'',a.tabletImei||'',a.red||'',a.simNumero||'',a.simIccid||'',a.simImei||'',a.rut||'',(a.observacion||'').replace(/\n/g,' ')]);
   }
   const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
@@ -384,57 +334,36 @@ document.getElementById('btn-export')?.addEventListener('click', async ()=>{
   URL.revokeObjectURL(url);
 });
 
-// ---------- Escáner (opcional con https) ----------
-async function scanOnce(){
-  try{
-    // Carga ZXing dinámicamente
-    const { BrowserMultiFormatReader } = await import('https://unpkg.com/@zxing/library@0.20.0/esm/index.js');
-    const codeReader = new BrowserMultiFormatReader();
-    const devices = await codeReader.listVideoInputDevices();
-    const deviceId = devices?.[0]?.deviceId;
-    const result = await codeReader.decodeOnceFromVideoDevice(deviceId, 'video-preview');
-    codeReader.reset();
-    return result?.text || '';
-  }catch(e){
-    alert('Escáner no disponible (requiere https/permiso de cámara).');
-    return '';
-  }
+async function refreshMasterSelects(){
+  const [vehiculos, conductores, sims] = await Promise.all([
+    getAll('vehiculos'), getAll('conductores'), getAll('sims')
+  ]);
+  const vehSel = document.getElementById('asig-vehiculo'); vehSel.innerHTML='';
+  vehiculos.sort((a,b)=>a.patente.localeCompare(b.patente)).forEach(v=>{
+    const opt = document.createElement('option'); opt.value = v.patente; opt.textContent = `${v.patente} — ${v.sigla||''}`.trim(); vehSel.appendChild(opt);
+  });
+  const conSel = document.getElementById('asig-conductor'); conSel.innerHTML='';
+  conductores.sort((a,b)=>a.rut.localeCompare(b.rut)).forEach(c=>{
+    const opt = document.createElement('option'); opt.value = c.rut; opt.textContent = `${c.rut} — ${c.nombre}`; conSel.appendChild(opt);
+  });
+  const simSel = document.getElementById('asig-sim-numero'); simSel.innerHTML='';
+  sims.sort((a,b)=> (a.numero||'').localeCompare(b.numero||'')).forEach(s=>{
+    const opt = document.createElement('option'); opt.value = s.numero; opt.textContent = `${s.numero} (${s.iccid||'sin ICCID'})`; simSel.appendChild(opt);
+  });
 }
 
-function ensurePreview(){
-  if(document.getElementById('video-preview')) return;
-  const v = document.createElement('video');
-  v.id='video-preview'; v.setAttribute('playsinline',''); v.style.width='1px'; v.style.height='1px'; v.style.opacity='0';
-  document.body.appendChild(v);
-}
-
-document.getElementById('scan-tablet')?.addEventListener('click', async ()=>{
-  ensurePreview(); const t = await scanOnce(); if(t) $('#asig-tablet-imei').value = onlyDigits(t);
-});
-document.getElementById('scan-sim')?.addEventListener('click', async ()=>{
-  ensurePreview(); const t = await scanOnce(); if(t) $('#asig-sim-iccid').value = onlyDigits(t);
-});
-document.getElementById('scan-tab-master')?.addEventListener('click', async ()=>{
-  ensurePreview(); const t = await scanOnce(); if(t) $('#tab-imei').value = onlyDigits(t);
-});
-document.getElementById('scan-sim-master')?.addEventListener('click', async ()=>{
-  ensurePreview(); const t = await scanOnce(); if(t) $('#sim-iccid').value = onlyDigits(t);
-});
-
-// ---------- Ajustes Firebase ----------
-document.getElementById('btn-guardar-config')?.addEventListener('click', ()=>{
-  const txt = $('#firebase-config').value.trim();
-  try{ JSON.parse(txt); localStorage.setItem('firebaseConfig', txt); alert('Config guardada'); }
-  catch{ alert('JSON inválido'); }
-});
-document.getElementById('btn-activar-firebase')?.addEventListener('click', ()=>{ tryEnableFirebase(); });
-
-// ---------- Init ----------
 (async function init(){
-  buildTabs();
   await openDB();
   await Promise.all([renderTablets(), renderConductores(), renderVehiculos(), renderSims(), renderAsignaciones()]);
   await refreshMasterSelects();
-  $('#sim-block').style.display = ($('#asig-red').value==='SIM') ? 'grid' : 'none';
-  if(localStorage.getItem('firebaseConfig')) $('#firebase-status').textContent='Config presente (no activo)';
+  document.getElementById('sim-block').style.display = (document.getElementById('asig-red').value==='SIM') ? 'grid' : 'none';
+
+  if(FORCE_FIREBASE){
+    try{
+      await enableFirebaseHardcoded();
+      await startRealtimeSync();
+    }catch(e){
+      console.error('Error activando Firebase:', e);
+    }
+  }
 })();
