@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "site": "asignadortablet-f1780",
+
+    "public": "public",
+    ...
+  }
+}

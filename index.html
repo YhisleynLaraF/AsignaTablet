@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Asignador de Tablets</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f766e">
+  <style>
+    :root{--bg:#0b1220;--card:#121a2b;--muted:#93a1b1;--fg:#e5e7eb;--accent:#14b8a6;--accent-2:#0ea5e9;--red:#ef4444}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:var(--bg);color:var(--fg)}
+    header{position:sticky;top:0;background:#0d1527;border-bottom:1px solid #1e293b;z-index:10}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    h1{font-size:20px;margin:0} .muted{color:var(--muted)} a{color:var(--accent-2)}
+    nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .tab{padding:8px 12px;border:1px solid #1e293b;border-radius:10px;background:#0e1729;cursor:pointer}
+    .tab.active{background:linear-gradient(90deg,var(--accent),#22d3ee);color:#05252a;font-weight:700}
+    main{padding:16px}
+    .grid{display:grid;gap:12px}
+    @media(min-width:900px){.grid-2{grid-template-columns:1fr 1fr}}
+    .card{background:var(--card);border:1px solid #1e293b;border-radius:16px;padding:16px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+    input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--fg)}
+    textarea{min-height:68px}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .btn{padding:10px 14px;border-radius:10px;border:1px solid #155e75;background:#0b2e33;color:#a7f3d0;cursor:pointer}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),#22d3ee);color:#062226;border:none}
+    .btn.red{background:#3a0d14;border:1px solid #7f1d1d;color:#fecaca}
+    .btn.outline{background:transparent;border:1px dashed #334155;color:#9ca3af}
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    th,td{padding:10px;border-bottom:1px solid #1e293b;text-align:left;font-size:14px}
+    th{color:#93c5fd}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid #1e293b}
+    .pill.sim{background:#042f2e;color:#99f6e4}
+    .pill.wifi{background:#0b1730;color:#bfdbfe}
+    .status{font-weight:600}
+    .status.entregado{color:#86efac}
+    .status.retirado{color:#fca5a5}
+    .sticky-footer{position:sticky;bottom:0;padding:10px;background:#0d1527;border-top:1px solid #1e293b}
+    .hint{font-size:12px;color:var(--muted)}
+    .scan-btn{white-space:nowrap}
+    .section{display:none}
+    .section.active{display:block}
+    .danger{color:#fecaca}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Asignador de Tablets <span class="muted">· PWA</span></h1>
+      <nav id="tabs"></nav>
+    </div>
+  </header>
+  <main class="wrap">
+
+    <!-- Tabs / Secciones -->
+    <section id="sec-asignar" class="section active">
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Crear Asignación</h2>
+          <div class="grid">
+            <div>
+              <label>Vehículo (Patente – Sigla)</label>
+              <select id="asig-vehiculo"></select>
+            </div>
+            <div>
+              <label>Conductor (RUT – Nombre)</label>
+              <select id="asig-conductor"></select>
+            </div>
+            <div class="row">
+              <div style="flex:1">
+                <label>Tablet IMEI</label>
+                <input id="asig-tablet-imei" placeholder="Ej: 35158732…" inputmode="numeric" />
+              </div>
+              <button id="scan-tablet" class="btn outline scan-btn">📷 Escanear</button>
+            </div>
+            <div>
+              <label>Red</label>
+              <select id="asig-red">
+                <option value="SIM">SIM</option>
+                <option value="WIFI">WIFI</option>
+              </select>
+            </div>
+            <div id="sim-block" class="grid">
+              <div class="row">
+                <div style="flex:1">
+                  <label>Número SIM</label>
+                  <select id="asig-sim-numero"></select>
+                </div>
+                <button id="scan-sim" class="btn outline scan-btn">📷 Escanear</button>
+              </div>
+              <div class="row">
+                <div style="flex:1">
+                  <label>ICCID</label>
+                  <input id="asig-sim-iccid" placeholder="19-22 dígitos" inputmode="numeric" />
+                </div>
+                <div style="flex:1">
+                  <label>IMEI SIM (opcional)</label>
+                  <input id="asig-sim-imei" placeholder="Si aplica" inputmode="numeric" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label>Observación</label>
+              <textarea id="asig-obs" placeholder="Notas…"></textarea>
+            </div>
+            <div class="row">
+              <button id="btn-crear-asig" class="btn primary">Guardar Asignación</button>
+              <span class="hint">Se marca como <b>Entregado</b> con fecha/hora actual.</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <h2 style="margin-right:auto">Asignaciones activas</h2>
+            <input id="filtro" placeholder="Buscar patente/IMEI/RUT" />
+            <button id="btn-export" class="btn">⬇ Exportar CSV</button>
+          </div>
+          <div style="overflow:auto">
+            <table id="tabla-asignaciones">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Patente</th>
+                  <th>Sigla</th>
+                  <th>Tablet IMEI</th>
+                  <th>Red</th>
+                  <th>SIM</th>
+                  <th>Conductor</th>
+                  <th>Estado</th>
+                  <th>Obs.</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="sticky-footer hint">Tip: usa el buscador para encontrar rápido por Patente, Sigla, IMEI, RUT o Nombre.</div>
+    </section>
+
+    <section id="sec-tablets" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Registrar Tablet Provisoria</h2>
+          <div class="grid">
+            <div class="row">
+              <div style="flex:1">
+                <label>IMEI</label>
+                <input id="tab-imei" inputmode="numeric" />
+              </div>
+              <button id="scan-tab-master" class="btn outline scan-btn">📷 Escanear</button>
+            </div>
+            <div>
+              <label>Modelo</label>
+              <input id="tab-modelo" placeholder="SM-X115 / Galaxy Active 5 / …" />
+            </div>
+            <div>
+              <label>Nota</label>
+              <input id="tab-nota" placeholder="Opcional" />
+            </div>
+            <button id="btn-add-tablet" class="btn primary">Agregar</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Tablets registradas</h2>
+          <div class="toolbar">
+            <input id="filtro-tablets" placeholder="Buscar IMEI/Modelo" />
+          </div>
+          <div style="overflow:auto"><table id="tabla-tablets"><thead><tr><th>IMEI</th><th>Modelo</th><th>Estado</th><th>Nota</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-conductores" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Registrar Conductor</h2>
+          <div class="grid">
+            <div>
+              <label>RUT</label>
+              <input id="con-rut" placeholder="12.345.678-9" />
+            </div>
+            <div>
+              <label>Nombre</label>
+              <input id="con-nombre" placeholder="Nombre Apellido" />
+            </div>
+            <button id="btn-add-conductor" class="btn primary">Agregar</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Conductores</h2>
+          <div class="toolbar"><input id="filtro-conductores" placeholder="Buscar RUT/Nombre" /></div>
+          <div style="overflow:auto"><table id="tabla-conductores"><thead><tr><th>RUT</th><th>Nombre</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-vehiculos" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Registrar Vehículo</h2>
+          <div class="grid">
+            <div>
+              <label>Patente</label>
+              <input id="veh-patente" placeholder="GVXX23" />
+            </div>
+            <div>
+              <label>Sigla</label>
+              <input id="veh-sigla" placeholder="TM208" />
+            </div>
+            <button id="btn-add-veh" class="btn primary">Agregar</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Vehículos</h2>
+          <div class="toolbar"><input id="filtro-vehiculos" placeholder="Buscar Patente/Sigla" /></div>
+          <div style="overflow:auto"><table id="tabla-vehiculos"><thead><tr><th>Patente</th><th>Sigla</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-sims" class="section">
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Registrar SIM</h2>
+          <div class="grid">
+            <div class="row">
+              <div style="flex:1">
+                <label>Número</label>
+                <input id="sim-numero" placeholder="+569… o 9 dígitos" inputmode="numeric" />
+              </div>
+              <button id="scan-sim-master" class="btn outline scan-btn">📷 Escanear</button>
+            </div>
+            <div>
+              <label>ICCID</label>
+              <input id="sim-iccid" placeholder="19-22 dígitos" inputmode="numeric" />
+            </div>
+            <div>
+              <label>IMEI SIM (opcional)</label>
+              <input id="sim-imei" placeholder="Si aplica" inputmode="numeric" />
+            </div>
+            <button id="btn-add-sim" class="btn primary">Agregar</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>SIMs</h2>
+          <div class="toolbar"><input id="filtro-sims" placeholder="Buscar Número/ICCID" /></div>
+          <div style="overflow:auto"><table id="tabla-sims"><thead><tr><th>Número</th><th>ICCID</th><th>IMEI SIM</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-ajustes" class="section">
+      <div class="card">
+        <h2>Ajustes</h2>
+        <p class="hint">Opcional: conecta con Firebase/Firestore para sincronización multiusuario. Pega tu config y activa.</p>
+        <div class="grid">
+          <label>Config Firebase (JSON)</label>
+          <textarea id="firebase-config" placeholder='{"apiKey":"…","authDomain":"…","projectId":"…",…}'></textarea>
+          <div class="row">
+            <button id="btn-guardar-config" class="btn">Guardar Config</button>
+            <button id="btn-activar-firebase" class="btn primary">Activar Firestore</button>
+            <span id="firebase-status" class="hint"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Acerca de</h2>
+        <p>Versión 1.0 · Local‑first · Sin frameworks · Hecho para operar en terreno.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // Registrar SW solo en https o localhost
+    if ((location.protocol === 'https:' || location.hostname === 'localhost') && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(console.error);
+    }
+  </script>
+</body>
+</html>

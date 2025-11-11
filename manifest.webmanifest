@@ -1,0 +1,9 @@
+{
+  "name": "Asignador de Tablets",
+  "short_name": "Asignador",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0f766e",
+  "icons": []
+}
