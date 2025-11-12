@@ -2,6 +2,27 @@
 // app.js — lógica con Firebase en duro
 // ==========================
 
+let _CONN_STATE = 'offline'; // 'offline' | 'syncing' | 'online'
+function setConn(state){
+  _CONN_STATE = state;
+  const dot = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  if(!dot || !label) return;
+  dot.classList.remove('online','offline','syncing');
+  dot.classList.add(state);
+  label.textContent = state==='online' ? 'Firebase: conectado'
+                   : state==='syncing' ? 'Firebase: sincronizando…'
+                   : 'Firebase: sin conexión';
+  // Habilita/Deshabilita "Guardar asignación" si quieres modo seguro
+  const btn = document.getElementById('btn-crear-asig');
+  if(btn){ btn.disabled = (state !== 'online'); }
+}
+// estado inicial
+setConn(navigator.onLine ? 'syncing' : 'offline');
+window.addEventListener('online',  ()=> setConn('syncing'));
+window.addEventListener('offline', ()=> setConn('offline'));
+
+
 const $ = sel => document.querySelector(sel);
 const nowISO = () => new Date().toISOString();
 const fmtDate = iso => new Date(iso).toLocaleString();
@@ -55,6 +76,10 @@ function openDB(){
         a.createIndex('tabletImei','tabletImei',{unique:false});
         a.createIndex('patente','patente',{unique:false});
       }
+      if(!d.objectStoreNames.contains('outbox')){
+        d.createObjectStore('outbox', { keyPath:'id' });
+      }
+
     };
     req.onsuccess = ()=>{ db = req.result; resolve(db) };
     req.onerror = ()=> reject(req.error);
@@ -65,6 +90,56 @@ const getAll = (store)=> new Promise((res,rej)=>{ const r=tx(store).getAll(); r.
 const get = (store,key)=> new Promise((res,rej)=>{ const r=tx(store).get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
 const put = (store,obj)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
 const del = (store,key)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
+
+async function enqueue(op){ // {collection, key, data}
+  const item = { id: uid(), ...op, ts: Date.now() };
+  return new Promise((res,rej)=>{
+    const r = tx('outbox','readwrite').put(item);
+    r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error);
+  });
+}
+async function getAllStore(store){
+  return new Promise((res,rej)=>{ const r=tx(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error) });
+}
+async function delStore(store,key){
+  return new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error) });
+}
+
+async function flushOutbox(){
+  if(!fs || !ff) return;
+  const items = await getAllStore('outbox');
+  if(!items.length) return;
+  setConn('syncing');
+  for(const it of items){
+    try{
+      await ff.setDoc(ff.doc(ff.collection(fs, it.collection), it.key), it.data, { merge:true });
+      await delStore('outbox', it.id);
+    }catch(e){
+      // Si falla el primero, corta; volveremos a intentar cuando haya red
+      break;
+    }
+  }
+  // tras intentar, fuerza reevaluar estado
+  await new Promise(r=>setTimeout(r, 50));
+  setConn(navigator.onLine ? 'syncing' : 'offline');
+}
+
+async function upsertRemote(collection, key, data){
+  // si estamos online y con Firestore cargado, intentamos directo
+  if(fs && ff && navigator.onLine){
+    try{
+      setConn('syncing');
+      await ff.setDoc(ff.doc(ff.collection(fs, collection), key), data, { merge:true });
+      setConn('online');
+      return;
+    }catch(e){
+      // cae a outbox
+    }
+  }
+  await enqueue({ collection, key, data });
+  setConn('offline');
+}
+window.addEventListener('online', ()=> flushOutbox());
 
 // Firebase en duro
 const FORCE_FIREBASE = true;
@@ -97,6 +172,23 @@ async function enableFirebaseHardcoded(){
 
   const st = document.getElementById('firebase-status');
   if(st) st.textContent = 'Firestore activo (config en código)';
+}
+
+let healthUnsub = null;
+async function watchFirebaseConnectivity(){
+  if(!fs || !ff) return;
+  // Doc pequeño para “ping” (asegúrate de tener reglas que permitan leer/escribir a usuarios autenticados)
+  const healthRef = ff.doc(ff.collection(fs, '_meta'), 'health');
+  try { await ff.setDoc(healthRef, { ping: Date.now() }, { merge:true }); } catch(e){ /* ignora */ }
+
+  // includeMetadataChanges => podemos ver fromCache/hasPendingWrites
+  healthUnsub = ff.onSnapshot(healthRef, { includeMetadataChanges:true }, (snap)=>{
+    if(!snap){ setConn(navigator.onLine ? 'syncing' : 'offline'); return; }
+    if(snap.metadata.hasPendingWrites){ setConn('syncing'); return; }
+    // fromCache === true => sin respuesta del servidor (offline o red bloqueada)
+    const online = !snap.metadata.fromCache;
+    setConn(online ? 'online' : (navigator.onLine ? 'syncing' : 'offline'));
+  });
 }
 
 async function startRealtimeSync(){
@@ -229,7 +321,8 @@ document.getElementById('btn-add-tablet')?.addEventListener('click', async ()=>{
   const nota = document.getElementById('tab-nota').value.trim();
   if(isEmpty(imei)) return alert('IMEI requerido');
   await put('tablets', { imei, modelo, provisional:true, estado:'disponible', nota });
-  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), imei), { imei, modelo, provisional:true, estado:'disponible', nota }, { merge:true });
+  //if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), imei), { imei, modelo, provisional:true, estado:'disponible', nota }, { merge:true });
+  await upsertRemote('tablets', tab.imei, { ...tab, estado:'disponible' });
   document.getElementById('tab-imei').value=''; document.getElementById('tab-modelo').value=''; document.getElementById('tab-nota').value='';
   await renderTablets(); await refreshMasterSelects();
 });
@@ -239,7 +332,8 @@ document.getElementById('btn-add-conductor')?.addEventListener('click', async ()
   const nombre = document.getElementById('con-nombre').value.trim();
   if(isEmpty(rut) || isEmpty(nombre)) return alert('RUT y Nombre son requeridos');
   await put('conductores', { rut, nombre });
-  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'conductores'), rut), { rut, nombre }, { merge:true });
+  //if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'conductores'), rut), { rut, nombre }, { merge:true });
+  await upsertRemote('conductores', rut, { rut, nombre });
   document.getElementById('con-rut').value=''; document.getElementById('con-nombre').value='';
   await renderConductores(); await refreshMasterSelects();
 });
@@ -249,7 +343,8 @@ document.getElementById('btn-add-veh')?.addEventListener('click', async ()=>{
   const sigla = (document.getElementById('veh-sigla').value||'').trim();
   if(isEmpty(patente)) return alert('Patente requerida');
   await put('vehiculos', { patente, sigla });
-  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'vehiculos'), patente), { patente, sigla }, { merge:true });
+  //if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'vehiculos'), patente), { patente, sigla }, { merge:true });
+  await upsertRemote('vehiculos', patente, { patente, sigla });
   document.getElementById('veh-patente').value=''; document.getElementById('veh-sigla').value='';
   await renderVehiculos(); await refreshMasterSelects();
 });
@@ -260,7 +355,8 @@ document.getElementById('btn-add-sim')?.addEventListener('click', async ()=>{
   const simImei = onlyDigits(document.getElementById('sim-imei').value);
   if(isEmpty(numero)) return alert('Número SIM requerido');
   await put('sims', { numero, iccid, simImei });
-  if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'sims'), numero), { numero, iccid, simImei }, { merge:true });
+  //if(fs && ff) await ff.setDoc(ff.doc(ff.collection(fs, 'sims'), numero), { numero, iccid, simImei }, { merge:true });
+  await upsertRemote('sims', numero, { numero, iccid, simImei });
   document.getElementById('sim-numero').value=''; document.getElementById('sim-iccid').value=''; document.getElementById('sim-imei').value='';
   await renderSims(); await refreshMasterSelects();
 });
@@ -307,8 +403,7 @@ document.getElementById('tabla-asignaciones')?.addEventListener('click', async (
   const tab = await get('tablets', a.tabletImei);
   if(tab){ await put('tablets', { ...tab, estado:'disponible' }); await renderTablets(); }
   await renderAsignaciones();
-  if(fs && ff){
-    await ff.setDoc(ff.doc(ff.collection(fs, 'asignaciones'), a.id), a, { merge:true });
+  await upsertRemote('asignaciones', asig.id, asig);
     if(tab) await ff.setDoc(ff.doc(ff.collection(fs, 'tablets'), tab.imei), { ...tab, estado:'disponible' }, { merge:true });
   }
 });
@@ -362,6 +457,8 @@ async function refreshMasterSelects(){
     try{
       await enableFirebaseHardcoded();
       await startRealtimeSync();
+      await watchFirebaseConnectivity();
+      await flushOutbox();
     }catch(e){
       console.error('Error activando Firebase:', e);
     }
