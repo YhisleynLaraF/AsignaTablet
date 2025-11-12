@@ -43,6 +43,13 @@
     .section{display:none}
     .section.active{display:block}
     .danger{color:#fecaca}
+    .conn{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+    .dot.online{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+    .dot.offline{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2)}
+    .dot.syncing{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.2)}
+    button:disabled{opacity:.55;cursor:not-allowed}
+
   </style>
 </head>
 <body>
@@ -50,6 +57,10 @@
     <div class="wrap">
       <h1>Asignador de Tablets <span class="muted">· PWA</span></h1>
       <nav id="tabs"></nav>
+      <div class="conn">
+        <span id="conn-dot" class="dot offline"></span>
+        <span id="conn-label" class="hint">Firebase: sin conexión</span>
+      </div>
     </div>
   </header>
   <main class="wrap">
