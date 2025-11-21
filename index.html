@@ -43,6 +43,17 @@
     .section{display:none}
     .section.active{display:block}
     .danger{color:#fecaca}
+    /* Autocomplete */
+    .ac-wrap{ position: relative; }
+    .ac-list{
+      position:absolute; left:0; right:0; top:calc(100% + 4px);
+      background:#0b1324; border:1px solid #334155; border-radius:10px;
+      max-height:240px; overflow:auto; z-index:50; display:none;
+    }
+    .ac-item{ padding:8px 10px; cursor:pointer; }
+    .ac-item small{ color:#93a1b1; margin-left:6px; }
+    .ac-item:hover, .ac-item.active{ background:#13223a; }
+
   </style>
 </head>
 <body>
