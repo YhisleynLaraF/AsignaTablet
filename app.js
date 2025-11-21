@@ -9,6 +9,105 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const isEmpty = v => !v || String(v).trim()==='';
 const onlyDigits = v => String(v||'').replace(/\D+/g,'');
 
+// ===== Autocomplete genérico =====
+function toDigits(s){ return String(s||'').replace(/\D+/g,''); }
+function toKey(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+
+function upgradeToAutocomplete(elementId, placeholder){
+  const old = document.getElementById(elementId);
+  if(!old) return null;
+
+  // Si ya es <input>, solo lo envuelvo
+  let input;
+  if(old.tagName.toLowerCase() === 'select'){
+    input = document.createElement('input');
+    input.id = elementId;
+    input.placeholder = placeholder || old.getAttribute('placeholder') || '';
+    input.className = old.className || '';
+    input.setAttribute('autocomplete', 'off');
+    input.style.width = '100%';
+    old.parentNode.replaceChild(input, old);
+  }else{
+    input = old;
+    input.setAttribute('autocomplete', 'off');
+  }
+
+  // Wrapper + lista
+  const wrap = document.createElement('div');
+  wrap.className = 'ac-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+
+  const list = document.createElement('div');
+  list.className = 'ac-list';
+  wrap.appendChild(list);
+
+  let items = [], idx = -1, lastQ = '';
+
+  function render(q){ // filtra y dibuja
+    list.innerHTML = '';
+    if(!items.length){ list.style.display='none'; return; }
+    items.forEach((it,i)=>{
+      const row = document.createElement('div');
+      row.className = 'ac-item' + (i===idx?' active':'');
+      row.innerHTML = it.html || `${it.value}${it.extra?` <small>${it.extra}</small>`:''}`;
+      row.onclick = ()=>{ input.value = it.value; hide(); if(it.onPick) it.onPick(it); };
+      list.appendChild(row);
+    });
+    list.style.display = 'block';
+  }
+  function hide(){ list.style.display='none'; idx=-1; }
+
+  function onKey(e){
+    if(list.style.display==='none') return;
+    if(e.key==='ArrowDown'){ idx = Math.min(idx+1, items.length-1); render(lastQ); e.preventDefault(); }
+    else if(e.key==='ArrowUp'){ idx = Math.max(idx-1, 0); render(lastQ); e.preventDefault(); }
+    else if(e.key==='Enter'){ if(idx>=0){ const it = items[idx]; input.value = it.value; hide(); if(it.onPick) it.onPick(it); e.preventDefault(); } }
+    else if(e.key==='Escape'){ hide(); }
+  }
+
+  return {
+    input, list,
+    setItems(arr, q){ items = arr||[]; idx=-1; lastQ=q||''; render(q); },
+    hide
+  };
+}
+
+// Helpers para construir resultados
+const AC = {
+  // tablets: match por cualquier subcadena de IMEI (ej: últimos 6)
+  async tablets(query){
+    const qd = toDigits(query);
+    if(qd.length < 3) return []; // evita ruido
+    const all = await getAll('tablets');
+    return all
+      .filter(t => String(t.imei).includes(qd))
+      .slice(0, 50)
+      .map(t => ({ value: String(t.imei), extra: t.modelo||'' }));
+  },
+  // conductores: por RUT o por nombre
+  async conductores(query){
+    const q = toKey(query), qd = toDigits(query);
+    if(q.length < 2 && qd.length < 3) return [];
+    const all = await getAll('conductores');
+    return all
+      .filter(c => toKey(c.nombre||'').includes(q) || String(c.rut).toLowerCase().includes(query.toLowerCase()))
+      .slice(0, 50)
+      .map(c => ({ value: String(c.rut), extra: c.nombre||'' }));
+  },
+  // sims: por número o ICCID
+  async sims(query){
+    const q = toDigits(query);
+    if(q.length < 3) return [];
+    const all = await getAll('sims');
+    return all
+      .filter(s => String(s.numero||'').includes(q) || String(s.iccid||'').includes(q))
+      .slice(0, 50)
+      .map(s => ({ value: String(s.numero||''), extra: s.iccid||'' }));
+  }
+};
+
+
 (function buildTabs(){
   const sections = [
     { id:'sec-asignar', label:'Asignar' },
@@ -335,27 +434,55 @@ document.getElementById('btn-export')?.addEventListener('click', async ()=>{
 });
 
 async function refreshMasterSelects(){
-  const [vehiculos, conductores, sims] = await Promise.all([
-    getAll('vehiculos'), getAll('conductores'), getAll('sims')
-  ]);
-  const vehSel = document.getElementById('asig-vehiculo'); vehSel.innerHTML='';
-  vehiculos.sort((a,b)=>a.patente.localeCompare(b.patente)).forEach(v=>{
-    const opt = document.createElement('option'); opt.value = v.patente; opt.textContent = `${v.patente} — ${v.sigla||''}`.trim(); vehSel.appendChild(opt);
-  });
-  const conSel = document.getElementById('asig-conductor'); conSel.innerHTML='';
-  conductores.sort((a,b)=>a.rut.localeCompare(b.rut)).forEach(c=>{
-    const opt = document.createElement('option'); opt.value = c.rut; opt.textContent = `${c.rut} — ${c.nombre}`; conSel.appendChild(opt);
-  });
-  const simSel = document.getElementById('asig-sim-numero'); simSel.innerHTML='';
-  sims.sort((a,b)=> (a.numero||'').localeCompare(b.numero||'')).forEach(s=>{
-    const opt = document.createElement('option'); opt.value = s.numero; opt.textContent = `${s.numero} (${s.iccid||'sin ICCID'})`; simSel.appendChild(opt);
-  });
+  const vehiculos = await getAll('vehiculos');
+  const vehSel = document.getElementById('asig-vehiculo');
+  if(vehSel){
+    vehSel.innerHTML = '';
+    vehiculos.sort((a,b)=> a.patente.localeCompare(b.patente))
+      .forEach(v=>{
+        const opt = document.createElement('option');
+        opt.value = v.patente;
+        opt.textContent = `${v.patente} — ${v.sigla||''}`.trim();
+        vehSel.appendChild(opt);
+      });
+  }
+  // NOTA: conductores y sims se resuelven on-demand con getAll() en el autocompletable
 }
+
 
 (async function init(){
   await openDB();
   await Promise.all([renderTablets(), renderConductores(), renderVehiculos(), renderSims(), renderAsignaciones()]);
   await refreshMasterSelects();
+  // --- Autocompletables ---
+const acImei = upgradeToAutocomplete('asig-tablet-imei', 'IMEI (puedes escribir últimos 6)');
+const acCon  = upgradeToAutocomplete('asig-conductor', 'RUT o Nombre');
+const acSim  = upgradeToAutocomplete('asig-sim-numero', 'Número SIM o ICCID');
+
+// Buscadores
+acImei?.input.addEventListener('input', async (e)=>{
+  const q = e.target.value;
+  acImei.setItems(await AC.tablets(q), q);
+});
+acCon?.input.addEventListener('input', async (e)=>{
+  const q = e.target.value;
+  acCon.setItems(await AC.conductores(q), q);
+});
+acSim?.input.addEventListener('input', async (e)=>{
+  const q = e.target.value;
+  acSim.setItems(await AC.sims(q), q);
+});
+
+// Navegación con teclado
+[acImei, acCon, acSim].forEach(ac=>{
+  if(!ac) return;
+  ac.input.addEventListener('keydown', (ev)=>{
+    // delega al manejador del widget
+    const e = ev; // nada extra por ahora
+  });
+  ac.input.addEventListener('blur', ()=> setTimeout(()=>ac.hide(), 150));
+});
+
   document.getElementById('sim-block').style.display = (document.getElementById('asig-red').value==='SIM') ? 'grid' : 'none';
 
   if(FORCE_FIREBASE){
