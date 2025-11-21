@@ -115,6 +115,7 @@ const AC = {
     { id:'sec-conductores', label:'Conductores' },
     { id:'sec-vehiculos', label:'Vehículos' },
     { id:'sec-sims', label:'SIMs' },
+    { id:'sec-historico', label:'Histórico' },   // <-- NUEVO
     { id:'sec-ajustes', label:'Ajustes' },
   ];
   const tabsEl = document.getElementById('tabs');
@@ -310,6 +311,122 @@ async function renderAsignaciones(){
   }).join('');
 }
 
+// --- Histórico diario ---
+function isSameDay(iso, day){
+  if(!iso) return false;
+  const d = new Date(iso);
+  return d.getFullYear()===day.getFullYear() && d.getMonth()===day.getMonth() && d.getDate()===day.getDate();
+}
+
+async function renderHistorico(){
+  const tbody = document.querySelector('#tabla-historico tbody');
+  if(!tbody) return;
+
+  const dateEl = document.getElementById('hist-date');
+  const statusEl = document.getElementById('hist-status');
+  const qEl = document.getElementById('hist-search');
+
+  const day = dateEl?.value ? new Date(dateEl.value+'T00:00:00') : new Date();
+  const status = (statusEl?.value || 'todos').toLowerCase();
+  const q = (qEl?.value || '').toLowerCase();
+
+  const all = await getAll('asignaciones');
+
+  // Construye "eventos" del día: Entregado (entregadoEn) y Retirado (devueltoEn)
+  const rows = [];
+  for(const a of all){
+    if(isSameDay(a.entregadoEn, day)){
+      rows.push({ ev:'Entregado', time:a.entregadoEn, a });
+    }
+    if(isSameDay(a.devueltoEn, day)){
+      rows.push({ ev:'Retirado', time:a.devueltoEn, a });
+    }
+  }
+
+  // Filtro por estado
+  const filtered = rows.filter(r=>{
+    if(status==='entregado' && r.ev!=='Entregado') return false;
+    if(status==='retirado' && r.ev!=='Retirado') return false;
+    return true;
+  }).filter(r=>{
+    // Búsqueda libre
+    const a = r.a;
+    const hay = (a.patente||'').toLowerCase().includes(q)
+      || (a.sigla||'').toLowerCase().includes(q)
+      || (a.tabletImei||'').toLowerCase().includes(q)
+      || (a.rut||'').toLowerCase().includes(q)
+      || (a.simNumero||'').toLowerCase().includes(q)
+      || (a.simIccid||'').toLowerCase().includes(q);
+    return q ? hay : true;
+  }).sort((x,y)=> y.time.localeCompare(x.time));
+
+  tbody.innerHTML = filtered.map(r=>{
+    const a = r.a;
+    const simTxt = a.red==='SIM' ? `${a.simNumero||''}${a.simIccid?` / ${a.simIccid}`:''}` : '';
+    return `
+      <tr>
+        <td title="${r.time}">${fmtDate(r.time)}</td>
+        <td>${a.patente||''}</td>
+        <td>${a.sigla||''}</td>
+        <td>${a.tabletImei||''}</td>
+        <td>${a.red||''}</td>
+        <td>${simTxt}</td>
+        <td>${a.rut||''}</td>
+        <td><span class="status ${r.ev==='Entregado'?'entregado':'retirado'}">${r.ev}</span></td>
+        <td>${a.observacion||''}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Exporta lo visible del histórico
+document.getElementById('hist-export')?.addEventListener('click', async ()=>{
+  const dateEl = document.getElementById('hist-date');
+  const statusEl = document.getElementById('hist-status');
+  const qEl = document.getElementById('hist-search');
+
+  const day = dateEl?.value || new Date().toISOString().slice(0,10);
+  const status = (statusEl?.value || 'todos').toLowerCase();
+  const q = (qEl?.value || '').toLowerCase();
+
+  const all = await getAll('asignaciones');
+  const targetDay = new Date(day+'T00:00:00');
+  const rows = [];
+
+  for(const a of all){
+    if(isSameDay(a.entregadoEn, targetDay)) rows.push({ ev:'Entregado', time:a.entregadoEn, a });
+    if(isSameDay(a.devueltoEn, targetDay)) rows.push({ ev:'Retirado', time:a.devueltoEn, a });
+  }
+
+  const filtered = rows.filter(r=>{
+    if(status==='entregado' && r.ev!=='Entregado') return false;
+    if(status==='retirado' && r.ev!=='Retirado') return false;
+    return true;
+  }).filter(r=>{
+    const a = r.a; const s = q;
+    const hay = (a.patente||'').toLowerCase().includes(s)
+      || (a.sigla||'').toLowerCase().includes(s)
+      || (a.tabletImei||'').toLowerCase().includes(s)
+      || (a.rut||'').toLowerCase().includes(s)
+      || (a.simNumero||'').toLowerCase().includes(s)
+      || (a.simIccid||'').toLowerCase().includes(s);
+    return q ? hay : true;
+  }).sort((x,y)=> y.time.localeCompare(x.time));
+
+  const hdr = ['fechaHora','estado','patente','sigla','tabletImei','red','simNumero','simIccid','rut','observacion'];
+  const data = filtered.map(r=>{
+    const a = r.a;
+    return [r.time, r.ev, a.patente||'', a.sigla||'', a.tabletImei||'', a.red||'', a.simNumero||'', a.simIccid||'', a.rut||'', (a.observacion||'').replace(/\n/g,' ')];
+  });
+  const csv = [hdr, ...data].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `historico_${day}_${status}.csv`; a.click();
+  URL.revokeObjectURL(url);
+});
+
+
 // CRUD & Eventos
 document.addEventListener('click', async (e)=>{
   const imei = e.target?.dataset?.delTablet;
@@ -484,6 +601,14 @@ acSim?.input.addEventListener('input', async (e)=>{
 });
 
   document.getElementById('sim-block').style.display = (document.getElementById('asig-red').value==='SIM') ? 'grid' : 'none';
+
+   // Histórico: set default hoy y listeners
+  const histDate = document.getElementById('hist-date');
+  if(histDate){ histDate.value = new Date().toISOString().slice(0,10); }
+  document.getElementById('hist-date')?.addEventListener('change', renderHistorico);
+  document.getElementById('hist-status')?.addEventListener('change', renderHistorico);
+  document.getElementById('hist-search')?.addEventListener('input', renderHistorico);
+  await renderHistorico();
 
   if(FORCE_FIREBASE){
     try{
