@@ -264,6 +264,41 @@
       </div>
     </section>
 
+    <section id="sec-historico" class="section">
+  <div class="card">
+    <h2>Histórico diario</h2>
+    <div class="toolbar">
+      <label class="hint">Día&nbsp;</label>
+      <input type="date" id="hist-date" />
+      <select id="hist-status" style="margin-left:8px">
+        <option value="todos">Todos</option>
+        <option value="entregado">Entregado</option>
+        <option value="retirado">Retirado</option>
+      </select>
+      <input id="hist-search" placeholder="Buscar patente/IMEI/RUT/SIM/ICCID" style="margin-left:auto" />
+      <button id="hist-export" class="btn">⬇ Exportar CSV</button>
+    </div>
+    <div style="overflow:auto">
+      <table id="tabla-historico">
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Patente</th>
+            <th>Sigla</th>
+            <th>Tablet IMEI</th>
+            <th>Red</th>
+            <th>SIM</th>
+            <th>Conductor</th>
+            <th>Estado</th>
+            <th>Obs.</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
     <section id="sec-ajustes" class="section">
       <div class="card">
         <h2>Ajustes</h2>
