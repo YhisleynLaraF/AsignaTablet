@@ -297,11 +297,9 @@ async function renderAsignaciones(){
     return `
       <tr>
         <td title="${a.entregadoEn}">${fmtDate(a.entregadoEn)}</td>
-        <td>${a.patente||''}</td>
         <td>${a.sigla||''}</td>
         <td>${a.tabletImei||''}</td>
         <td>${pill}</td>
-        <td style="white-space:pre-line">${simTxt}</td>
         <td>${a.rut||''}</td>
         <td>${estado}</td>
         <td>${a.observacion||''}</td>
