@@ -553,16 +553,17 @@ async function refreshMasterSelects(){
   const vehSel = document.getElementById('asig-vehiculo');
   if(vehSel){
     vehSel.innerHTML = '';
-    vehiculos.sort((a,b)=> a.patente.localeCompare(b.patente))
+    vehiculos.sort((a,b)=> a.sigla.localeCompare(b.sigla))
       .forEach(v=>{
         const opt = document.createElement('option');
         opt.value = v.patente;
-        opt.textContent = `${v.patente} — ${v.sigla||''}`.trim();
+        opt.textContent = `${v.sigla} — ${v.patente||''}`.trim();
         vehSel.appendChild(opt);
       });
   }
   // NOTA: conductores y sims se resuelven on-demand con getAll() en el autocompletable
 }
+
 
 
 (async function init(){
