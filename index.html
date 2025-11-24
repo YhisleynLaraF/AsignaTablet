@@ -87,6 +87,39 @@
     /* Reserva espacio para que el footer no tape contenido */
     main{ padding-bottom: calc(var(--footer-h) + 8px); }
 
+    /* Altura útil del viewport en móviles/tablets */
+:root{
+  --header-h: 64px;   /* se ajusta por JS abajo */
+  --footer-h: 0px;    /* pon 48px si usas footer fijo */
+}
+
+/* Solo en la pantalla de Asignar: fija el alto de la grilla a la ventana */
+#sec-asignar .grid.grid-2{
+  height: calc(100svh - var(--header-h) - var(--footer-h) - 32px); /* 32 = padding top/bottom aproximado */
+}
+
+/* La card derecha “Asignaciones activas” se vuelve un contenedor flex vertical */
+.card.fill{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;      /* SIN ESTO, no hay scroll interno */
+}
+
+/* Su toolbar queda pegada arriba mientras scrolleo la tabla */
+.card.fill .toolbar{
+  position: sticky; top: 0; z-index: 2;
+  background: var(--card);
+  border-bottom: 1px solid #1e293b;
+}
+
+/* El contenedor de la tabla crece y scrollea dentro de la card */
+.scroll-area{
+  flex: 1 1 auto;
+  min-height: 0;      /* CLAVE para permitir overflow en flex */
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
   </style>
 </head>
 <body>
@@ -155,22 +188,20 @@
             </div>
           </div>
         </div>
-        <div class="card">
+        <div class="card fill">
           <div class="toolbar">
             <h2 style="margin-right:auto">Asignaciones activas</h2>
             <input id="filtro" placeholder="Buscar patente/IMEI/RUT" />
             <button id="btn-export" class="btn">⬇ Exportar CSV</button>
           </div>
-          <div class="scroll-area" id="asig-scroll">
+          <div class="scroll-area">
             <table id="tabla-asignaciones">
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Patente</th>
                   <th>Sigla</th>
                   <th>Tablet IMEI</th>
                   <th>Red</th>
-                  <th>SIM</th>
                   <th>Conductor</th>
                   <th>Estado</th>
                   <th>Obs.</th>
@@ -354,6 +385,15 @@
   </main>
 
   <script src="app.js" type="module"></script>
+  <script>
+  function setHeaderH(){
+    const h = document.querySelector('header')?.offsetHeight || 64;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+  }
+  window.addEventListener('load', setHeaderH);
+  window.addEventListener('resize', setHeaderH);
+</script>
+
   <script>
     if ((location.protocol === 'https:' || location.hostname === 'localhost') && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(console.error);
