@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -53,6 +54,38 @@
     .ac-item{ padding:8px 10px; cursor:pointer; }
     .ac-item small{ color:#93a1b1; margin-left:6px; }
     .ac-item:hover, .ac-item.active{ background:#13223a; }
+    /* Altura fija + scroll interno para tablas grandes */
+    .scroll-area{
+      overflow: auto;
+      /* evita que la página crezca: usa viewport dinámico (móvil) */
+      max-height: clamp(260px, 50dvh, 520px);
+      overscroll-behavior: contain;
+      border-top: 1px solid #1e293b; /* separa visualmente de la toolbar */
+    }
+    
+    /* Deja la toolbar de la card “pegada” arriba mientras scrolleas la tabla */
+    .card .toolbar{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--card);
+      border-bottom: 1px solid #1e293b;
+    }
+    
+    /* Convierte el footer en fijo para que no cambie el alto útil */
+    :root{ --footer-h: 48px; }
+    .sticky-footer{
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      height: var(--footer-h);
+      display: flex; align-items: center;
+      padding: 0 10px;
+      background:#0d1527;
+      border-top:1px solid #1e293b;
+      z-index: 9998;
+    }
+    /* Reserva espacio para que el footer no tape contenido */
+    main{ padding-bottom: calc(var(--footer-h) + 8px); }
 
   </style>
 </head>
@@ -128,7 +161,7 @@
             <input id="filtro" placeholder="Buscar patente/IMEI/RUT" />
             <button id="btn-export" class="btn">⬇ Exportar CSV</button>
           </div>
-          <div style="overflow:auto">
+          <div class="scroll-area" id="asig-scroll">
             <table id="tabla-asignaciones">
               <thead>
                 <tr>
