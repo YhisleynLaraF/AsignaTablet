@@ -565,6 +565,7 @@ async function refreshMasterSelects(){
 }
 
 
+
 (async function init(){
   await openDB();
   await Promise.all([renderTablets(), renderConductores(), renderVehiculos(), renderSims(), renderAsignaciones()]);
