@@ -14,7 +14,7 @@
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     h1{font-size:20px;margin:0} .muted{color:var(--muted)} a{color:var(--accent-2)}
     nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-    .tab{padding:8px 12px;border:1px solid #1e293b;border-radius:10px;background:#0e1729;cursor:pointer}
+    .tab{padding:8px 12px;border:1px solid #1e293b;border-radius:10px;background:#648ad8;cursor:pointer}
     .tab.active{background:linear-gradient(90deg,var(--accent),#22d3ee);color:#05252a;font-weight:700}
     main{padding:16px}
     .grid{display:grid;gap:12px}
@@ -150,7 +150,6 @@
                 <label>Tablet IMEI</label>
                 <input id="asig-tablet-imei" placeholder="Ej: 35158732…" inputmode="numeric" />
               </div>
-              <button id="scan-tablet" class="btn outline scan-btn">📷 Escanear</button>
             </div>
             <div>
               <label>Red</label>
@@ -165,17 +164,7 @@
                   <label>Número SIM</label>
                   <select id="asig-sim-numero"></select>
                 </div>
-                <button id="scan-sim" class="btn outline scan-btn">📷 Escanear</button>
               </div>
-              <div class="row">
-                <div style="flex:1">
-                  <label>ICCID</label>
-                  <input id="asig-sim-iccid" placeholder="19-22 dígitos" inputmode="numeric" />
-                </div>
-                <div style="flex:1">
-                  <label>IMEI SIM (opcional)</label>
-                  <input id="asig-sim-imei" placeholder="Si aplica" inputmode="numeric" />
-                </div>
               </div>
             </div>
             <div>
