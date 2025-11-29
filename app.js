@@ -133,6 +133,51 @@ const AC = {
   });
 })();
 
+// Firebase en duro
+const FORCE_FIREBASE = true;
+// 4 PROYECTOS: RELLENA con tus credenciales reales
+const FIREBASE_CONFIGS = {
+  consti: {
+    apiKey: "AIzaSyANiGFaZSU7gbvAc_Lljlt8JfACAKC7P1M",
+    authDomain: "asignatabletconsti.firebaseapp.com",
+    projectId: "asignatabletconsti",
+    storageBucket: "asignatabletconsti.firebasestorage.app",
+    messagingSenderId: "783352339818",
+    appId: "1:783352339818:web:c3756b40c90f8032be9913",
+  },
+  chillan: {
+    apiKey: "AIzaSyA9IKdd1NDOw_9CjdpK__wS2gaAGSBCRw8",
+    authDomain: "asignatabletchillan.firebaseapp.com",
+    projectId: "asignatabletchillan",
+    storageBucket: "asignatabletchillan.firebasestorage.app",
+    messagingSenderId: "693814715022",
+    appId: "1:693814715022:web:318861decde93ae71c5fdf",
+  },
+  arauco: {
+    apiKey: "AIzaSyDLh83W6IGZk97PPPUSkWJTLoPppSMEwGo",
+    authDomain: "asignatabletarauco.firebaseapp.com",
+    projectId: "asignatabletarauco",
+    storageBucket: "asignatabletarauco.firebasestorage.app",
+    messagingSenderId: "160594763774",
+    appId: "1:160594763774:web:aab3d7a361006c0a85eaaf",
+  },
+  valdivia: {
+    apiKey: "AIzaSyArU_xinVBUwIw6mpsgOIfuMzp9RSgkteY",
+    authDomain: "asignatabletvaldivia.firebaseapp.com",
+    projectId: "asignatabletvaldivia",
+    storageBucket: "asignatabletvaldivia.firebasestorage.app",
+    messagingSenderId: "693945062676",
+    appId: "1:693945062676:web:86817eba04d96a28bf5e01",
+  }
+};
+
+// Firebase libs/estado
+let fbApp=null, auth=null, fs=null, ff=null, fbLib=null, authLib=null;
+let fbUnsubs = [];
+
+// Zona actual (persistida)
+let currentZone = localStorage.getItem('fb_zone') || 'chillan';
+
 let DB_NAME = 'asignadorDB_' + currentZone; // una DB local por zona
 const DB_VER = 1;
 let db;
@@ -174,50 +219,7 @@ const get = (store,key)=> new Promise((res,rej)=>{ const r=tx(store).get(key); r
 const put = (store,obj)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
 const del = (store,key)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error)});
 
-// Firebase en duro
-const FORCE_FIREBASE = true;
-// 4 PROYECTOS: RELLENA con tus credenciales reales
-const FIREBASE_CONFIGS = {
-  consti: {
-    apiKey: "AIzaSyANiGFaZSU7gbvAc_Lljlt8JfACAKC7P1M",
-    authDomain: "asignatabletconsti.firebaseapp.com",
-    projectId: "asignatabletconsti",
-    storageBucket: "asignatabletconsti.firebasestorage.app",
-    messagingSenderId: "783352339818",
-    appId: "1:783352339818:web:c3756b40c90f8032be9913",
-  },
-  chillan: {
-    apiKey: "AIzaSyA9IKdd1NDOw_9CjdpK__wS2gaAGSBCRw8",
-    authDomain: "asignatabletchillan.firebaseapp.com",
-    projectId: "asignatabletchillan",
-    storageBucket: "asignatabletchillan.firebasestorage.app",
-    messagingSenderId: "693814715022",
-    appId: "1:693814715022:web:318861decde93ae71c5fdf",
-  },
-  arauco: {
-    apiKey: "AIzaSyDLh83W6IGZk97PPPUSkWJTLoPppSMEwGo",
-    authDomain: "asignatabletarauco.firebaseapp.com",
-    projectId: "asignatabletarauco",
-    storageBucket: "asignatabletarauco.firebasestorage.app",
-    messagingSenderId: "160594763774",
-    appId: "1:160594763774:web:aab3d7a361006c0a85eaaf",
-  },
-  valdivia: {
-    apiKey: "AIzaSyArU_xinVBUwIw6mpsgOIfuMzp9RSgkteY",
-    authDomain: "asignatabletvaldivia.firebaseapp.com",
-    projectId: "asignatabletvaldivia",
-    storageBucket: "asignatabletvaldivia.firebasestorage.app",
-    messagingSenderId: "693945062676",
-    appId: "1:693945062676:web:86817eba04d96a28bf5e01",
-  }
-};
 
-// Zona actual (persistida)
-let currentZone = localStorage.getItem('fb_zone') || 'chillan';
-
-// Firebase libs/estado
-let fbApp=null, auth=null, fs=null, ff=null, fbLib=null, authLib=null;
-let fbUnsubs = [];
 
 async function enableFirebaseForZone(zone){
   if(!FORCE_FIREBASE) return;
