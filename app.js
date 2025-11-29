@@ -133,9 +133,17 @@ const AC = {
   });
 })();
 
-const DB_NAME = 'asignadorDB';
+let DB_NAME = 'asignadorDB_' + currentZone; // una DB local por zona
 const DB_VER = 1;
 let db;
+
+async function openDBForZone(zone){
+  DB_NAME = 'asignadorDB_' + zone;
+  if (db && db.close) { try{ db.close(); }catch(_){} }
+  db = null;
+  await openDB();
+}
+
 function openDB(){
   return new Promise((resolve, reject)=>{
     const req = indexedDB.open(DB_NAME, DB_VER);
@@ -168,59 +176,150 @@ const del = (store,key)=> new Promise((res,rej)=>{ const r=tx(store,'readwrite')
 
 // Firebase en duro
 const FORCE_FIREBASE = true;
-const FIREBASE_CONFIG = {
-  "apiKey": "AIzaSyBOoHRADT4yOCpytPvcyHcaWSB1pT2ZB8I",
- "authDomain": "asignadortablet.firebaseapp.com",
-  "projectId": "asignadortablet",
-  "storageBucket": "asignadortablet.firebasestorage.app",
-  "messagingSenderId": "261128444351",
-  "appId": "1:261128444351:web:996b8a3171da8d20f6e90a"
+// 4 PROYECTOS: RELLENA con tus credenciales reales
+const FIREBASE_CONFIGS = {
+  consti: {
+    apiKey: "AIzaSyANiGFaZSU7gbvAc_Lljlt8JfACAKC7P1M",
+    authDomain: "asignatabletconsti.firebaseapp.com",
+    projectId: "asignatabletconsti",
+    storageBucket: "asignatabletconsti.firebasestorage.app",
+    messagingSenderId: "783352339818",
+    appId: "1:783352339818:web:c3756b40c90f8032be9913",
+  },
+  chillan: {
+    apiKey: "AIzaSyA9IKdd1NDOw_9CjdpK__wS2gaAGSBCRw8",
+    authDomain: "asignatabletchillan.firebaseapp.com",
+    projectId: "asignatabletchillan",
+    storageBucket: "asignatabletchillan.firebasestorage.app",
+    messagingSenderId: "693814715022",
+    appId: "1:693814715022:web:318861decde93ae71c5fdf",
+  },
+  arauco: {
+    apiKey: "AIzaSyDLh83W6IGZk97PPPUSkWJTLoPppSMEwGo",
+    authDomain: "asignatabletarauco.firebaseapp.com",
+    projectId: "asignatabletarauco",
+    storageBucket: "asignatabletarauco.firebasestorage.app",
+    messagingSenderId: "160594763774",
+    appId: "1:160594763774:web:aab3d7a361006c0a85eaaf",
+  },
+  valdivia: {
+    apiKey: "AIzaSyArU_xinVBUwIw6mpsgOIfuMzp9RSgkteY",
+    authDomain: "asignatabletvaldivia.firebaseapp.com",
+    projectId: "asignatabletvaldivia",
+    storageBucket: "asignatabletvaldivia.firebasestorage.app",
+    messagingSenderId: "693945062676",
+    appId: "1:693945062676:web:86817eba04d96a28bf5e01",
+  }
 };
-let fbApp = null, auth = null, fs = null, ff = null;
 
-async function enableFirebaseHardcoded(){
+// Zona actual (persistida)
+let currentZone = localStorage.getItem('fb_zone') || 'chillan';
+
+// Firebase libs/estado
+let fbApp=null, auth=null, fs=null, ff=null, fbLib=null, authLib=null;
+let fbUnsubs = [];
+
+async function enableFirebaseForZone(zone){
   if(!FORCE_FIREBASE) return;
-  const appMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-  const authMod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
-  ff = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  const cfg = FIREBASE_CONFIGS[zone];
+  if(!cfg) throw new Error('Config Firebase no definida para zona: ' + zone);
 
-  fbApp = appMod.initializeApp(FIREBASE_CONFIG);
-  auth = authMod.getAuth(fbApp);
-  fs = ff.getFirestore(fbApp);
+  // importa módulos una sola vez
+  if(!fbLib)   fbLib   = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+  if(!authLib) authLib = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+  if(!ff)      ff      = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
-  await authMod.setPersistence(auth, authMod.browserLocalPersistence);
-  if(!auth.currentUser) await authMod.signInAnonymously(auth);
+  // cierra app previa (si existía)
+  if (fbApp && fbLib?.deleteApp) {
+    try { await fbLib.deleteApp(fbApp); } catch(_) {}
+  }
+
+  fbApp = fbLib.initializeApp(cfg, 'app-'+zone);
+  auth  = authLib.getAuth(fbApp);
+  fs    = ff.getFirestore(fbApp);
+
+  await authLib.setPersistence(auth, authLib.browserLocalPersistence);
+  if(!auth.currentUser) await authLib.signInAnonymously(auth);
 
   ff.enableIndexedDbPersistence(fs).catch(()=>{});
   window.addEventListener('online', ()=> ff.enableNetwork(fs));
   window.addEventListener('offline', ()=> ff.disableNetwork(fs));
 
+  // UI
   const st = document.getElementById('firebase-status');
-  if(st) st.textContent = 'Firestore activo (config en código)';
+  if(st) st.textContent = `Firestore activo · zona: ${zone} · proyecto: ${cfg.projectId}`;
+  const cfgBox = document.getElementById('firebase-config');
+  if(cfgBox) cfgBox.value = JSON.stringify(cfg, null, 2);
+  const zinfo = document.getElementById('zone-info');
+  if(zinfo) zinfo.textContent = `· ${zone} (${cfg.projectId})`;
 }
 
-async function startRealtimeSync(){
+
+function stopRealtime(){
+  fbUnsubs.forEach(u=>{ try{ u && u(); }catch(_){} });
+  fbUnsubs = [];
+}
+
+function startRealtimeSync(){
   if(!fs || !ff) return;
+  stopRealtime(); // asegura no duplicar listeners
+
   const upsert = async (store, keyField, doc) => {
     const current = await get(store, doc[keyField]);
     await put(store, { ...(current||{}), ...doc });
   };
-  ff.onSnapshot(ff.collection(fs, 'vehiculos'), snap => snap.docChanges().forEach(async ch => {
-    if(ch.type!=='removed') await upsert('vehiculos','patente', ch.doc.data());
-  }));
-  ff.onSnapshot(ff.collection(fs, 'conductores'), snap => snap.docChanges().forEach(async ch => {
-    if(ch.type!=='removed') await upsert('conductores','rut', ch.doc.data());
-  }));
-  ff.onSnapshot(ff.collection(fs, 'sims'), snap => snap.docChanges().forEach(async ch => {
-    if(ch.type!=='removed') await upsert('sims','numero', ch.doc.data());
-  }));
-  ff.onSnapshot(ff.collection(fs, 'tablets'), snap => snap.docChanges().forEach(async ch => {
-    if(ch.type!=='removed') await upsert('tablets','imei', ch.doc.data());
-  }));
-  ff.onSnapshot(ff.collection(fs, 'asignaciones'), snap => snap.docChanges().forEach(async ch => {
-    if(ch.type!=='removed'){ await put('asignaciones', ch.doc.data()); renderAsignaciones(); }
-  }));
+
+  fbUnsubs.push(
+    ff.onSnapshot(ff.collection(fs, 'vehiculos'), snap =>
+      snap.docChanges().forEach(async ch => { if(ch.type!=='removed') await upsert('vehiculos','patente', ch.doc.data()); })
+    )
+  );
+  fbUnsubs.push(
+    ff.onSnapshot(ff.collection(fs, 'conductores'), snap =>
+      snap.docChanges().forEach(async ch => { if(ch.type!=='removed') await upsert('conductores','rut', ch.doc.data()); })
+    )
+  );
+  fbUnsubs.push(
+    ff.onSnapshot(ff.collection(fs, 'sims'), snap =>
+      snap.docChanges().forEach(async ch => { if(ch.type!=='removed') await upsert('sims','numero', ch.doc.data()); })
+    )
+  );
+  fbUnsubs.push(
+    ff.onSnapshot(ff.collection(fs, 'tablets'), snap =>
+      snap.docChanges().forEach(async ch => { if(ch.type!=='removed') await upsert('tablets','imei', ch.doc.data()); })
+    )
+  );
+  fbUnsubs.push(
+    ff.onSnapshot(ff.collection(fs, 'asignaciones'), snap =>
+      snap.docChanges().forEach(async ch => {
+        if(ch.type!=='removed'){ await put('asignaciones', ch.doc.data()); renderAsignaciones(); renderHistorico(); }
+      })
+    )
+  );
 }
+
+async function switchZone(zone){
+  if(zone === currentZone) return;
+
+  // 1) Persisto nueva zona
+  currentZone = zone;
+  localStorage.setItem('fb_zone', zone);
+
+  // 2) DB local de la zona
+  await openDBForZone(zone);
+
+  // 3) Re-render con datos locales (vacío o previos de esa zona)
+  await Promise.all([
+    renderTablets(), renderConductores(), renderVehiculos(),
+    renderSims(), renderAsignaciones(), renderHistorico(), refreshMasterSelects()
+  ]);
+
+  // 4) Firebase para la zona y listeners
+  await enableFirebaseForZone(zone);
+  startRealtimeSync();
+}
+
+
 
 // Render
 async function renderTablets(){
@@ -567,41 +666,26 @@ async function refreshMasterSelects(){
 
 
 (async function init(){
-  await openDB();
+  // DB de la zona actual
+  await openDBForZone(currentZone);
+
+  // Render inicial (local)
   await Promise.all([renderTablets(), renderConductores(), renderVehiculos(), renderSims(), renderAsignaciones()]);
   await refreshMasterSelects();
-  // --- Autocompletables ---
-const acImei = upgradeToAutocomplete('asig-tablet-imei', 'IMEI (puedes escribir últimos 6)');
-const acCon  = upgradeToAutocomplete('asig-conductor', 'RUT o Nombre');
-const acSim  = upgradeToAutocomplete('asig-sim-numero', 'Número SIM o ICCID');
 
-// Buscadores
-acImei?.input.addEventListener('input', async (e)=>{
-  const q = e.target.value;
-  acImei.setItems(await AC.tablets(q), q);
-});
-acCon?.input.addEventListener('input', async (e)=>{
-  const q = e.target.value;
-  acCon.setItems(await AC.conductores(q), q);
-});
-acSim?.input.addEventListener('input', async (e)=>{
-  const q = e.target.value;
-  acSim.setItems(await AC.sims(q), q);
-});
+  // Autocomplete (igual que ya lo tienes)…
+  const acImei = upgradeToAutocomplete('asig-tablet-imei', 'IMEI (puedes escribir últimos 6)');
+  const acCon  = upgradeToAutocomplete('asig-conductor', 'RUT o Nombre');
+  const acSim  = upgradeToAutocomplete('asig-sim-numero', 'Número SIM o ICCID');
+  acImei?.input.addEventListener('input', async (e)=>{ const q=e.target.value; acImei.setItems(await AC.tablets(q), q); });
+  acCon?.input.addEventListener('input',  async (e)=>{ const q=e.target.value; acCon.setItems(await AC.conductores(q), q); });
+  acSim?.input.addEventListener('input',  async (e)=>{ const q=e.target.value; acSim.setItems(await AC.sims(q), q); });
+  [acImei, acCon, acSim].forEach(ac=>{ if(!ac) return; ac.input.addEventListener('blur', ()=> setTimeout(()=>ac.hide(),150)); });
 
-// Navegación con teclado
-[acImei, acCon, acSim].forEach(ac=>{
-  if(!ac) return;
-  ac.input.addEventListener('keydown', (ev)=>{
-    // delega al manejador del widget
-    const e = ev; // nada extra por ahora
-  });
-  ac.input.addEventListener('blur', ()=> setTimeout(()=>ac.hide(), 150));
-});
-
+  // SIM visible según red
   document.getElementById('sim-block').style.display = (document.getElementById('asig-red').value==='SIM') ? 'grid' : 'none';
 
-   // Histórico: set default hoy y listeners
+  // Histórico (por defecto hoy)
   const histDate = document.getElementById('hist-date');
   if(histDate){ histDate.value = new Date().toISOString().slice(0,10); }
   document.getElementById('hist-date')?.addEventListener('change', renderHistorico);
@@ -609,12 +693,19 @@ acSim?.input.addEventListener('input', async (e)=>{
   document.getElementById('hist-search')?.addEventListener('input', renderHistorico);
   await renderHistorico();
 
+  // Selector de zona
+  const zoneSelect = document.getElementById('zone-select');
+  if(zoneSelect){
+    zoneSelect.value = currentZone;
+    zoneSelect.addEventListener('change', e=> switchZone(e.target.value));
+  }
+
+  // Firebase + listeners para la zona actual
   if(FORCE_FIREBASE){
     try{
-      await enableFirebaseHardcoded();
-      await startRealtimeSync();
-    }catch(e){
-      console.error('Error activando Firebase:', e);
-    }
+      await enableFirebaseForZone(currentZone);
+      startRealtimeSync();
+    }catch(e){ console.error('Error activando Firebase:', e); }
   }
 })();
+
